@@ -33,6 +33,15 @@ async def create_subscription(session: AsyncSession, user_id: int, plan_days: in
     return subscription
 
 
+async def get_latest_pending_subscription(session: AsyncSession, user_id: int) -> Subscription | None:
+    q = (
+        select(Subscription)
+        .where(Subscription.user_id == user_id, Subscription.status == 'pending')
+        .order_by(Subscription.created_at.desc())
+    )
+    return (await session.execute(q)).scalar_one_or_none()
+
+
 async def activate_subscription(
     session: AsyncSession,
     subscription: Subscription,
@@ -80,6 +89,18 @@ async def create_payment(
     return payment
 
 
+async def get_latest_created_payment_for_subscription(
+    session: AsyncSession,
+    subscription_id: int,
+) -> Payment | None:
+    q = (
+        select(Payment)
+        .where(Payment.subscription_id == subscription_id, Payment.status == 'created')
+        .order_by(Payment.created_at.desc())
+    )
+    return (await session.execute(q)).scalar_one_or_none()
+
+
 async def mark_payment_paid(session: AsyncSession, payment_id: int, provider_payment_id: str | None = None) -> Payment | None:
     payment = await session.get(Payment, payment_id)
     if not payment:
@@ -89,3 +110,7 @@ async def mark_payment_paid(session: AsyncSession, payment_id: int, provider_pay
     await session.commit()
     await session.refresh(payment)
     return payment
+    await session.commit()
+    await session.refresh(payment)
+    return payment
+
