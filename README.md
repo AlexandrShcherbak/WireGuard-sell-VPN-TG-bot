@@ -14,7 +14,7 @@
 - `aiohttp` (интеграция с WireGuard Easy API)
 
 ## Быстрый старт
-1. Создайте `.env`:
+1. Создайте `.env` в корне проекта:
    ```env
    BOT_TOKEN=...
    ADMIN_IDS=[123456789]
@@ -29,17 +29,42 @@
    ```bash
    pip install -r requirements.txt
    ```
-3. Запустите:
+3. Запустите из корня репозитория:
    ```bash
-   python -m bot.main
+   python main.py
    ```
 
-## Структура
-- `bot/` — Telegram bot (handlers, keyboards, middleware)
-- `database/` — модели и CRUD
-- `wireguard/` — интеграция с WireGuard Easy + генератор конфигов
+## Структура проекта
+- `main.py` — корневая точка входа (запуск приложения).
+- `bot/` — пакет Telegram-бота (handlers, keyboards, middleware, внутренняя точка входа `bot.main`).
+- `database/` — модели и CRUD.
+- `wireguard/` — генерация WireGuard-конфигов и manager.
+- `integrations/` — слой внешних интеграций (пока заглушки для платежей и WireGuard API).
+- `scripts/` — запуск/деплой/бэкапы.
+
+### Почему `main.py` был внутри `bot/`
+`bot/` — это Python-пакет с кодом приложения, поэтому `bot/main.py` удобно использовать как модульную точку входа (`python -m bot.main`).
+
+Чтобы не путаться с запуском из разных директорий, добавлена корневая точка входа `main.py`.
+Теперь рекомендованный способ — всегда запускать из корня:
+
+```bash
+python main.py
+```
+
+## Заглушки под API
+В `integrations/` добавлены временные заглушки:
+- `integrations/payments/provider.py` — `StubPaymentProvider`.
+- `integrations/wireguard/api.py` — `StubWireGuardApiClient`.
+
+Это позволяет спокойно развивать архитектуру (handlers/services), а позже заменить заглушки на реальные API-клиенты без перестройки всего проекта.
+
+## Важно
+Платежный модуль сейчас в режиме MVP (ручное подтверждение/заглушки).
+Перед релизом добавьте реального платежного провайдера, webhook-валидацию и полноценные API-интеграции.
 - `scripts/` — запуск/деплой/бэкапы
 
 ## Важно
 Это production-ready каркас, но платежный модуль сейчас в режиме MVP (ручное подтверждение `paid`).
 Перед релизом добавьте реального платежного провайдера и webhook-валидацию.
+
