@@ -47,8 +47,6 @@ class Settings(BaseSettings):
     default_plan_days: int = Field(default=30, env='DEFAULT_PLAN_DAYS')
     default_plan_price_rub: int = Field(default=299, env='DEFAULT_PLAN_PRICE_RUB')
 
-    support_contact: str = Field(default='@support', env='SUPPORT_CONTACT')
-
     @root_validator(pre=True)
     def populate_admin_ids_from_single_admin_id(cls, values: dict) -> dict:
         """Support ADMIN_ID for convenience when ADMIN_IDS is not defined."""
@@ -70,3 +68,4 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     _load_env_files()
     return Settings()
+
