@@ -69,8 +69,3 @@ def get_settings() -> Settings:
     _load_env_files()
     return Settings()
 
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
