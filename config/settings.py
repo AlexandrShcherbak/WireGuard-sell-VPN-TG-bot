@@ -1,11 +1,32 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic.v1 import BaseSettings, Field, root_validator
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-ENV_FILE = ROOT_DIR / '.env'
-ALT_ENV_FILE = ROOT_DIR / 'env'
+ENV_FILES = (ROOT_DIR / '.env', ROOT_DIR / 'env')
+
+
+def _load_env_files() -> None:
+    """Load KEY=VALUE pairs from local env files without python-dotenv."""
+    for env_file in ENV_FILES:
+        if not env_file.exists():
+            continue
+
+        for raw_line in env_file.read_text(encoding='utf-8').splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip()
+
+            if value and ((value[0] == value[-1]) and value[0] in {'"', "'"}):
+                value = value[1:-1]
+
+            os.environ.setdefault(key, value)
 
 
 class Settings(BaseSettings):
@@ -40,11 +61,16 @@ class Settings(BaseSettings):
         return values
 
     class Config:
-        env_file = (str(ENV_FILE), str(ALT_ENV_FILE))
-        env_file_encoding = 'utf-8'
         extra = 'ignore'
 
 
 @lru_cache
 def get_settings() -> Settings:
+    _load_env_files()
     return Settings()
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
+
