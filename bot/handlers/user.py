@@ -31,6 +31,15 @@ async def open_menu(call: CallbackQuery) -> None:
     await call.answer()
 
 
+@router.callback_query(F.data == 'support')
+async def write_to_support(call: CallbackQuery) -> None:
+    await call.message.edit_text(
+        f'Написать в поддержку: {settings.support_contact}',
+        reply_markup=main_menu_kb(),
+    )
+    await call.answer()
+
+
 @router.callback_query(F.data == 'buy')
 async def buy_sub(call: CallbackQuery) -> None:
     async with SessionLocal() as session:

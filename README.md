@@ -17,6 +17,9 @@
 1. Создайте `.env` в корне проекта:
    ```env
    BOT_TOKEN=...
+   # Можно указать одного админа:
+   ADMIN_ID=123456789
+   # или список:
    ADMIN_IDS=[123456789]
    DATABASE_URL=sqlite+aiosqlite:///./vpn_bot.db
 
@@ -24,6 +27,8 @@
    WIREGUARD_API_TOKEN=your_api_token
    WIREGUARD_SERVER_PUBLIC_KEY=server_public_key
    WIREGUARD_SERVER_ENDPOINT=1.2.3.4:51820
+
+   SUPPORT_CONTACT=@your_support_username
    ```
 2. Установите зависимости:
    ```bash
@@ -33,6 +38,14 @@
    ```bash
    python main.py
    ```
+
+
+### Почему `main.py` не читает `.env` напрямую
+`main.py` только запускает приложение (`asyncio.run(main())`). Настройки читаются внутри модулей через `config.settings`/`config.config`, например в `bot/bot_instance.py` и `bot/handlers/*`. Это нормальная схема: точка входа минимальная, а конфигурация загружается там, где используется.
+
+Поддерживаются оба файла переменных: `.env` и `env` в корне проекта. Загрузка выполняется встроенным парсером (`KEY=VALUE`) и не требует `python-dotenv`.
+
+> Важно: переменные `WG_CONFIG_PATH` и `WG_INTERFACE` в текущей версии кода не используются — интеграция построена через `WIREGUARD_API_*` и параметры сервера (`WIREGUARD_SERVER_*`).
 
 ## Структура проекта
 - `main.py` — корневая точка входа (запуск приложения).
