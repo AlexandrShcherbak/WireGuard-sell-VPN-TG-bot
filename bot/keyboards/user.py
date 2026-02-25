@@ -7,6 +7,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text='💳 Купить подписку', callback_data='buy')],
             [InlineKeyboardButton(text='🎁 Пробный период', callback_data='trial')],
             [InlineKeyboardButton(text='📄 Моя подписка', callback_data='my_sub')],
+            [InlineKeyboardButton(text='🆘 Написать в поддержку', callback_data='support')],
         ]
     )
 
