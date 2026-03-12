@@ -13,14 +13,6 @@ ENV_FILES = (
 )
 
 
-def _iter_env_lines(content: str) -> list[str]:
-    """Return env file lines and support files that accidentally contain literal "\\n"."""
-    lines = content.splitlines()
-    if len(lines) == 1 and '\\n' in content:
-        return content.replace('\\n', '\n').splitlines()
-    return lines
-
-
 def _load_env_files() -> None:
     """Load KEY=VALUE pairs from local env files without python-dotenv."""
     loaded_paths: set[Path] = set()
@@ -33,8 +25,7 @@ def _load_env_files() -> None:
         if not env_file.exists():
             continue
 
-        content = env_file.read_text(encoding='utf-8-sig')
-        for raw_line in _iter_env_lines(content):
+        for raw_line in env_file.read_text(encoding='utf-8-sig').splitlines():
             line = raw_line.strip()
             if not line or line.startswith('#') or '=' not in line:
                 continue
