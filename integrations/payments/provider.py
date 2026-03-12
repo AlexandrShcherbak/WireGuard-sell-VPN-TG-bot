@@ -39,18 +39,19 @@ class CryptoBotProvider:
         return {'Crypto-Pay-API-Token': self.token}
 
     async def create_invoice(self, user_id: int, amount_rub: int, payload: str | None = None) -> Invoice:
-        params = {
-            'asset': 'RUB',
-            'amount': amount_rub,
+        data = {
+            'currency_type': 'fiat',
+            'fiat': 'RUB',
+            'amount': str(amount_rub),
             'description': f'VPN subscription for user {user_id}',
-            'allow_comments': 'false',
-            'allow_anonymous': 'false',
+            'allow_comments': False,
+            'allow_anonymous': False,
         }
         if payload:
-            params['payload'] = payload
+            data['payload'] = payload
 
         async with aiohttp.ClientSession(headers=self._headers) as session:
-            async with session.get(f'{self.base_url}/createInvoice', params=params, timeout=20) as resp:
+            async with session.post(f'{self.base_url}/createInvoice', json=data, timeout=20) as resp:
                 resp.raise_for_status()
                 data = await resp.json()
 
@@ -58,7 +59,10 @@ class CryptoBotProvider:
             raise RuntimeError(f"CryptoBot invoice creation failed: {data}")
 
         result = data['result']
-        return Invoice(invoice_id=str(result['invoice_id']), pay_url=result['pay_url'])
+        pay_url = result.get('bot_invoice_url') or result.get('pay_url')
+        if not pay_url:
+            raise RuntimeError(f"CryptoBot response missing payment URL: {data}")
+        return Invoice(invoice_id=str(result['invoice_id']), pay_url=pay_url)
 
     async def get_status(self, invoice_id: str) -> PaymentStatus:
         async with aiohttp.ClientSession(headers=self._headers) as session:
