@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +49,7 @@ async def activate_subscription(
     wg_client_name: str,
     config_path: str,
 ) -> Subscription:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     subscription.status = 'active'
     subscription.starts_at = now
     subscription.ends_at = now + timedelta(days=subscription.plan_days)
