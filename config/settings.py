@@ -42,6 +42,15 @@ class Settings(BaseSettings):
 
     payment_provider: str = Field(default='manual', env='PAYMENT_PROVIDER')
     payment_token: str | None = Field(default=None, env='PAYMENT_TOKEN')
+    cryptobot_token: str | None = Field(default=None, env='CRYPTOBOT_TOKEN')
+    donation_base_url: str | None = Field(default=None, env='DONATION_BASE_URL')
+
+    support_contact: str = Field(default='@support', env='SUPPORT_CONTACT')
+
+    sendler_webhook_enabled: bool = Field(default=False, env='SENDLER_WEBHOOK_ENABLED')
+    sendler_webhook_host: str = Field(default='0.0.0.0', env='SENDLER_WEBHOOK_HOST')
+    sendler_webhook_port: int = Field(default=8080, env='SENDLER_WEBHOOK_PORT')
+    sendler_webhook_secret: str | None = Field(default=None, env='SENDLER_WEBHOOK_SECRET')
 
     trial_days: int = Field(default=1, env='TRIAL_DAYS')
     default_plan_days: int = Field(default=30, env='DEFAULT_PLAN_DAYS')
@@ -68,4 +77,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     _load_env_files()
     return Settings()
-
