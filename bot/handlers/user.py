@@ -1,13 +1,16 @@
+import logging
+
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
-from bot.keyboards.user import buy_methods_kb, check_payment_kb, main_menu_kb
+from bot.keyboards.inline import buy_methods_kb, check_payment_kb, main_menu_kb
 from bot.services.subscription_delivery import activate_and_deliver_subscription
 from bot.utils.helpers import fmt_dt
 from config.config import settings
 from database.crud import (
     create_payment,
     create_subscription,
+    get_latest_pending_subscription,
     get_or_create_user,
     get_payment,
     get_subscription,
@@ -18,6 +21,7 @@ from database.db import SessionLocal
 from integrations.payments import CryptoBotProvider, DonationAlertsProvider
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 def _build_howto_text() -> str:
@@ -97,6 +101,28 @@ async def buy_sub(call: CallbackQuery) -> None:
     await call.answer()
 
 
+@router.callback_query(F.data == 'back_to_subscription')
+async def back_to_subscription(call: CallbackQuery) -> None:
+    async with SessionLocal() as session:
+        user = await get_or_create_user(
+            session=session,
+            telegram_id=call.from_user.id,
+            username=call.from_user.username,
+            full_name=call.from_user.full_name,
+        )
+        subscription = await get_latest_pending_subscription(session, user.id)
+
+    if not subscription:
+        await call.answer('Нет ожидающей оплаты подписки', show_alert=True)
+        return
+
+    await call.message.edit_text(
+        f'Выберите способ оплаты для заказа <code>{subscription.id}</code>:',
+        reply_markup=buy_methods_kb(subscription.id),
+    )
+    await call.answer()
+
+
 @router.callback_query(F.data == 'trial')
 async def trial_info(call: CallbackQuery) -> None:
     await call.answer('Пробный период подключается поддержкой. Напишите в чат поддержки.', show_alert=True)
@@ -130,11 +156,16 @@ async def create_crypto_payment(call: CallbackQuery) -> None:
         return
 
     provider = CryptoBotProvider(settings.cryptobot_token)
-    invoice = await provider.create_invoice(
-        user_id=call.from_user.id,
-        amount_rub=subscription.price_rub,
-        payload=f'subscription:{subscription.id}:payment:{payment.id}',
-    )
+    try:
+        invoice = await provider.create_invoice(
+            user_id=call.from_user.id,
+            amount_rub=subscription.price_rub,
+            payload=f'subscription:{subscription.id}:payment:{payment.id}',
+        )
+    except Exception as exc:
+        logger.exception('Failed to create CryptoBot invoice')
+        await call.answer(f'Не удалось создать счёт: {exc}', show_alert=True)
+        return
 
     async with SessionLocal() as session:
         db_payment = await get_payment(session, payment.id)
@@ -176,12 +207,17 @@ async def create_donation_payment(call: CallbackQuery) -> None:
             provider='donation',
         )
 
-    provider = DonationAlertsProvider(settings.donation_base_url)
-    invoice = await provider.create_invoice(
-        user_id=call.from_user.id,
-        amount_rub=subscription.price_rub,
-        payload=f'subscription:{subscription.id}:payment:{payment.id}',
-    )
+    provider = DonationAlertsProvider(base_url=settings.donation_base_url, token=settings.donationalerts_token)
+    try:
+        invoice = await provider.create_invoice(
+            user_id=call.from_user.id,
+            amount_rub=subscription.price_rub,
+            payload=f'subscription:{subscription.id}:payment:{payment.id}',
+        )
+    except Exception as exc:
+        logger.exception('Failed to create donation invoice')
+        await call.answer(f'Не удалось сформировать ссылку на оплату: {exc}', show_alert=True)
+        return
 
     async with SessionLocal() as session:
         db_payment = await get_payment(session, payment.id)
@@ -230,7 +266,7 @@ async def check_payment(call: CallbackQuery) -> None:
             status = await provider.get_status(payment.provider_payment_id or '')
             is_paid = status.state == 'paid'
         else:
-            # Для донат-сервисов ждём webhook-подтверждение.
+            # Для донат-сервисов подтверждение оплаты обычно приходит webhook'ом.
             is_paid = False
 
         if not is_paid:

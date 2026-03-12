@@ -57,6 +57,12 @@ def _load_env_files() -> None:
     if 'DONATION_BASE_URL' not in os.environ and 'DONATIONALERTS_URL' in os.environ:
         os.environ['DONATION_BASE_URL'] = os.environ['DONATIONALERTS_URL']
 
+    if 'DONATION_BASE_URL' not in os.environ and 'DONATIONALERTS_BASE_URL' in os.environ:
+        os.environ['DONATION_BASE_URL'] = os.environ['DONATIONALERTS_BASE_URL']
+
+    if 'DONATIONALERTS_TOKEN' not in os.environ and 'DONATION_TOKEN' in os.environ:
+        os.environ['DONATIONALERTS_TOKEN'] = os.environ['DONATION_TOKEN']
+
 
 class Settings(BaseSettings):
     bot_token: str = Field(..., env='BOT_TOKEN')
@@ -72,12 +78,18 @@ class Settings(BaseSettings):
     payment_provider: str = Field(default='manual', env='PAYMENT_PROVIDER')
     payment_token: str | None = Field(default=None, env='PAYMENT_TOKEN')
     cryptobot_token: str | None = Field(default=None, env='CRYPTOBOT_TOKEN')
-    donation_base_url: str | None = Field(default=None, env='DONATION_BASE_URL')
+    donation_base_url: str | None = Field(default='https://www.donationalerts.com/r/countvpn', env='DONATION_BASE_URL')
+    donationalerts_token: str | None = Field(default=None, env='DONATIONALERTS_TOKEN')
+    donationalerts_base_url: str = Field(
+        default='https://www.donationalerts.com/r/countvpn',
+        env='DONATIONALERTS_BASE_URL',
+    )
 
     support_contact: str = Field(default='@support', env='SUPPORT_CONTACT')
 
     # Вебхуки отключены в polling-режиме, поля оставлены для совместимости конфигов.
     sendler_webhook_enabled: bool = Field(default=False, env='SENDLER_WEBHOOK_ENABLED')
+    sendler_webhook_url: str | None = Field(default=None, env='SENDLER_WEBHOOK_URL')
     sendler_webhook_host: str = Field(default='0.0.0.0', env='SENDLER_WEBHOOK_HOST')
     sendler_webhook_port: int = Field(default=8080, env='SENDLER_WEBHOOK_PORT')
     sendler_webhook_secret: str | None = Field(default=None, env='SENDLER_WEBHOOK_SECRET')
@@ -103,7 +115,15 @@ class Settings(BaseSettings):
             )
 
         if not values.get('DONATION_BASE_URL') and not values.get('donation_base_url'):
-            values['DONATION_BASE_URL'] = values.get('DONATIONALERTS_URL') or values.get('donationalerts_url')
+            values['DONATION_BASE_URL'] = (
+                values.get('DONATIONALERTS_URL')
+                or values.get('donationalerts_url')
+                or values.get('DONATIONALERTS_BASE_URL')
+                or values.get('donationalerts_base_url')
+            )
+
+        if not values.get('DONATIONALERTS_TOKEN') and not values.get('donationalerts_token'):
+            values['DONATIONALERTS_TOKEN'] = values.get('DONATION_TOKEN') or values.get('donation_token')
 
         return values
 
