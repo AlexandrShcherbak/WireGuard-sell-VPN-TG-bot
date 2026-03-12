@@ -5,7 +5,10 @@
 ## Возможности
 - Регистрация пользователя в Telegram-боте.
 - Покупка/активация подписки.
-- Генерация WireGuard-конфига и выдача `.conf` файлом.
+- Генерация WireGuard-конфига по шаблону и выдача `.conf` + QR-кода.
+- Оплата через Crypto Bot и рублёвый донат-сервис.
+- Команда `/howto` с краткой инструкцией по подключению.
+- Webhook-интеграции для Crypto Bot / донатов / Sendler.
 - Простая админ-панель (`/admin`) со статистикой.
 
 ## Стек
@@ -29,6 +32,16 @@
    WIREGUARD_SERVER_ENDPOINT=1.2.3.4:51820
 
    SUPPORT_CONTACT=@your_support_username
+
+   # Платежи
+   CRYPTOBOT_TOKEN=...
+   DONATION_BASE_URL=https://www.donationalerts.com/r/your_page
+
+   # Webhook сервер (для callback от Sendler/донатов/CryptoBot)
+   SENDLER_WEBHOOK_ENABLED=true
+   SENDLER_WEBHOOK_HOST=0.0.0.0
+   SENDLER_WEBHOOK_PORT=8080
+   SENDLER_WEBHOOK_SECRET=super-secret
    ```
 2. Установите зависимости:
    ```bash
@@ -65,19 +78,11 @@
 python main.py
 ```
 
-## Заглушки под API
-В `integrations/` добавлены временные заглушки:
-- `integrations/payments/provider.py` — `StubPaymentProvider`.
-- `integrations/wireguard/api.py` — `StubWireGuardApiClient`.
-
-Это позволяет спокойно развивать архитектуру (handlers/services), а позже заменить заглушки на реальные API-клиенты без перестройки всего проекта.
+## Webhook endpoints
+- `POST /webhooks/cryptobot` — успешные события оплаты Crypto Bot.
+- `POST /webhooks/donation` — подтверждение рублёвой оплаты от донат-сервиса.
+- `POST /webhooks/sendler` — лиды/события из Sendler.
 
 ## Важно
-Платежный модуль сейчас в режиме MVP (ручное подтверждение/заглушки).
-Перед релизом добавьте реального платежного провайдера, webhook-валидацию и полноценные API-интеграции.
-- `scripts/` — запуск/деплой/бэкапы
-
-## Важно
-Это production-ready каркас, но платежный модуль сейчас в режиме MVP (ручное подтверждение `paid`).
-Перед релизом добавьте реального платежного провайдера и webhook-валидацию.
-
+- Для безопасности включайте `SENDLER_WEBHOOK_SECRET` и проверяйте секрет в webhook-запросах.
+- Для донат-сервисов статус обычно подтверждается только webhook'ом.

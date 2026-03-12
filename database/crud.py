@@ -110,7 +110,12 @@ async def mark_payment_paid(session: AsyncSession, payment_id: int, provider_pay
     await session.commit()
     await session.refresh(payment)
     return payment
-    await session.commit()
-    await session.refresh(payment)
-    return payment
+
+
+async def get_payment(session: AsyncSession, payment_id: int) -> Payment | None:
+    return await session.get(Payment, payment_id)
+
+
+async def get_subscription(session: AsyncSession, subscription_id: int) -> Subscription | None:
+    return await session.get(Subscription, subscription_id)
 
