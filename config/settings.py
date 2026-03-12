@@ -5,23 +5,40 @@ from pathlib import Path
 from pydantic.v1 import BaseSettings, Field, root_validator
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-ENV_FILES = (ROOT_DIR / '.env', ROOT_DIR / 'env')
+ENV_FILES = (
+    ROOT_DIR / '.env',
+    ROOT_DIR / 'env',
+    Path.cwd() / '.env',
+    Path.cwd() / 'env',
+)
 
 
 def _load_env_files() -> None:
     """Load KEY=VALUE pairs from local env files without python-dotenv."""
+    loaded_paths: set[Path] = set()
     for env_file in ENV_FILES:
+        env_path = env_file.resolve()
+        if env_path in loaded_paths:
+            continue
+        loaded_paths.add(env_path)
+
         if not env_file.exists():
             continue
 
-        for raw_line in env_file.read_text(encoding='utf-8').splitlines():
+        for raw_line in env_file.read_text(encoding='utf-8-sig').splitlines():
             line = raw_line.strip()
             if not line or line.startswith('#') or '=' not in line:
                 continue
 
+            if line.startswith('export '):
+                line = line[len('export '):].strip()
+
             key, value = line.split('=', 1)
             key = key.strip()
             value = value.strip()
+
+            if ' #' in value and not value.startswith(('"', "'")):
+                value = value.split(' #', 1)[0].rstrip()
 
             if value and ((value[0] == value[-1]) and value[0] in {'"', "'"}):
                 value = value[1:-1]
