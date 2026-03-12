@@ -1,7 +1,11 @@
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 
 import aiohttp
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -87,17 +91,49 @@ class CryptoBotProvider:
 class DonationAlertsProvider:
     """Формирует ссылку на донат-сервис с рублёвой оплатой."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(self, base_url: str, token: str | None = None) -> None:
         self.base_url = base_url.rstrip('/')
+        self.token = token
 
     async def create_invoice(self, user_id: int, amount_rub: int, payload: str | None = None) -> Invoice:
-        query = {'amount': amount_rub, 'currency': 'RUB', 'user': user_id}
+        query: dict[str, str | int] = {'amount': amount_rub, 'currency': 'RUB', 'user': user_id}
         if payload:
             query['payload'] = payload
-        invoice_id = payload or f'donation-{user_id}-{amount_rub}'
+        if self.token:
+            query['token'] = self.token
+
+        timestamp = int(datetime.now(timezone.utc).timestamp())
+        invoice_id = payload or f'donation-{user_id}-{amount_rub}-{timestamp}'
+        query['invoice_id'] = invoice_id
         pay_url = f'{self.base_url}?{urlencode(query)}'
         return Invoice(invoice_id=invoice_id, pay_url=pay_url)
 
     async def get_status(self, invoice_id: str) -> PaymentStatus:
         # Для донат-сервисов подтверждение оплаты обычно приходит webhook'ом.
         return PaymentStatus(invoice_id=invoice_id, state='pending')
+
+
+def get_payment_provider(settings: object) -> StubPaymentProvider | CryptoBotProvider | DonationAlertsProvider:
+    provider_name = str(getattr(settings, 'payment_provider', 'manual')).lower()
+    logger.info('Selecting payment provider: %s', provider_name)
+
+    if provider_name == 'cryptobot':
+        token = (
+            getattr(settings, 'cryptobot_token', None)
+            or getattr(settings, 'payment_token', None)
+            or getattr(settings, 'cryptobot_api_token', None)
+        )
+        if not token:
+            raise RuntimeError('CryptoBot provider selected but token is missing')
+        return CryptoBotProvider(token)
+
+    if provider_name in {'donationalerts', 'donation'}:
+        token = getattr(settings, 'donationalerts_token', None) or getattr(settings, 'donation_token', None)
+        base_url = (
+            getattr(settings, 'donation_base_url', None)
+            or getattr(settings, 'donationalerts_base_url', None)
+            or 'https://www.donationalerts.com/r/countvpn'
+        )
+        return DonationAlertsProvider(base_url=base_url, token=token)
+
+    return StubPaymentProvider()
