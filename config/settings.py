@@ -28,6 +28,18 @@ def _load_env_files() -> None:
 
             os.environ.setdefault(key, value)
 
+    # Совместимость со старыми именами переменных.
+    if 'ADMIN_IDS' not in os.environ and 'ADMIN_ID' in os.environ:
+        os.environ['ADMIN_IDS'] = f"[{os.environ['ADMIN_ID']}]"
+
+    if 'CRYPTOBOT_TOKEN' not in os.environ:
+        legacy_token = os.environ.get('CRYPTOBOT_API_TOKEN') or os.environ.get('PAYMENT_TOKEN')
+        if legacy_token:
+            os.environ['CRYPTOBOT_TOKEN'] = legacy_token
+
+    if 'DONATION_BASE_URL' not in os.environ and 'DONATIONALERTS_URL' in os.environ:
+        os.environ['DONATION_BASE_URL'] = os.environ['DONATIONALERTS_URL']
+
 
 class Settings(BaseSettings):
     bot_token: str = Field(..., env='BOT_TOKEN')
@@ -47,26 +59,35 @@ class Settings(BaseSettings):
 
     support_contact: str = Field(default='@support', env='SUPPORT_CONTACT')
 
+    # Вебхуки отключены в polling-режиме, поля оставлены для совместимости конфигов.
     sendler_webhook_enabled: bool = Field(default=False, env='SENDLER_WEBHOOK_ENABLED')
     sendler_webhook_host: str = Field(default='0.0.0.0', env='SENDLER_WEBHOOK_HOST')
     sendler_webhook_port: int = Field(default=8080, env='SENDLER_WEBHOOK_PORT')
     sendler_webhook_secret: str | None = Field(default=None, env='SENDLER_WEBHOOK_SECRET')
 
     trial_days: int = Field(default=1, env='TRIAL_DAYS')
-    default_plan_days: int = Field(default=30, env='DEFAULT_PLAN_DAYS')
-    default_plan_price_rub: int = Field(default=299, env='DEFAULT_PLAN_PRICE_RUB')
+    default_plan_days: int = Field(default=180, env='DEFAULT_PLAN_DAYS')
+    default_plan_price_rub: int = Field(default=600, env='DEFAULT_PLAN_PRICE_RUB')
 
     @root_validator(pre=True)
     def populate_admin_ids_from_single_admin_id(cls, values: dict) -> dict:
         """Support ADMIN_ID for convenience when ADMIN_IDS is not defined."""
-        if values.get('ADMIN_IDS'):
-            return values
+        if not values.get('ADMIN_IDS') and not values.get('admin_ids'):
+            single_admin_id = values.get('ADMIN_ID') or values.get('admin_id')
+            if single_admin_id not in (None, ''):
+                values['ADMIN_IDS'] = f'[{single_admin_id}]'
 
-        single_admin_id = values.get('ADMIN_ID')
-        if single_admin_id in (None, ''):
-            return values
+        if not values.get('CRYPTOBOT_TOKEN') and not values.get('cryptobot_token'):
+            values['CRYPTOBOT_TOKEN'] = (
+                values.get('CRYPTOBOT_API_TOKEN')
+                or values.get('cryptobot_api_token')
+                or values.get('PAYMENT_TOKEN')
+                or values.get('payment_token')
+            )
 
-        values['ADMIN_IDS'] = f'[{single_admin_id}]'
+        if not values.get('DONATION_BASE_URL') and not values.get('donation_base_url'):
+            values['DONATION_BASE_URL'] = values.get('DONATIONALERTS_URL') or values.get('donationalerts_url')
+
         return values
 
     class Config:
