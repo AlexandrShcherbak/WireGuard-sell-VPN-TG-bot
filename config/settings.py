@@ -78,6 +78,7 @@ class Settings(BaseSettings):
 
     # Вебхуки отключены в polling-режиме, поля оставлены для совместимости конфигов.
     sendler_webhook_enabled: bool = Field(default=False, env='SENDLER_WEBHOOK_ENABLED')
+    sendler_webhook_url: str | None = Field(default=None, env='SENDLER_WEBHOOK_URL')
     sendler_webhook_host: str = Field(default='0.0.0.0', env='SENDLER_WEBHOOK_HOST')
     sendler_webhook_port: int = Field(default=8080, env='SENDLER_WEBHOOK_PORT')
     sendler_webhook_secret: str | None = Field(default=None, env='SENDLER_WEBHOOK_SECRET')
