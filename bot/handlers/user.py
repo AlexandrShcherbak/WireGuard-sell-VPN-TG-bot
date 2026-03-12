@@ -1,16 +1,37 @@
 from aiogram import F, Router
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, Message
 
-from bot.keyboards.user import buy_confirm_kb, main_menu_kb
+from bot.keyboards.user import buy_methods_kb, check_payment_kb, main_menu_kb
+from bot.services.subscription_delivery import activate_and_deliver_subscription
 from bot.utils.helpers import fmt_dt
 from config.config import settings
-from database.crud import create_subscription, get_or_create_user, get_user_active_subscription
+from database.crud import (
+    create_payment,
+    create_subscription,
+    get_or_create_user,
+    get_payment,
+    get_subscription,
+    get_user_active_subscription,
+    mark_payment_paid,
+)
 from database.db import SessionLocal
-from wireguard.generator import build_client_config, save_config
-from wireguard.manager import WireGuardEasyManager
+from integrations.payments import CryptoBotProvider, DonationAlertsProvider
 
 router = Router()
-wg_manager = WireGuardEasyManager(settings.wireguard_api_url, settings.wireguard_api_token)
+
+
+def _build_howto_text() -> str:
+    return (
+        '📘 <b>Как подключить VPN за 1 минуту</b>\n\n'
+        '1) Установите WireGuard:\n'
+        '• Android: https://play.google.com/store/apps/details?id=com.wireguard.android\n'
+        '• iOS: https://apps.apple.com/us/app/wireguard/id1441195209\n'
+        '• Windows/macOS/Linux: https://www.wireguard.com/install/\n\n'
+        '2) После оплаты получите .conf и QR-код в этом боте.\n'
+        '3) В приложении WireGuard импортируйте конфиг (или отсканируйте QR).\n'
+        '4) Включите туннель и проверьте IP: https://2ip.ru\n\n'
+        f'Если нужна помощь — {settings.support_contact}'
+    )
 
 
 @router.message(F.text == '/start')
@@ -23,6 +44,17 @@ async def cmd_start(message: Message) -> None:
             full_name=message.from_user.full_name,
         )
     await message.answer('Привет! Это VPN-бот. Выберите действие:', reply_markup=main_menu_kb())
+
+
+@router.message(F.text == '/howto')
+async def cmd_howto(message: Message) -> None:
+    await message.answer(_build_howto_text(), disable_web_page_preview=True)
+
+
+@router.callback_query(F.data == 'howto')
+async def howto_callback(call: CallbackQuery) -> None:
+    await call.message.edit_text(_build_howto_text(), disable_web_page_preview=True, reply_markup=main_menu_kb())
+    await call.answer()
 
 
 @router.callback_query(F.data == 'menu')
@@ -58,11 +90,157 @@ async def buy_sub(call: CallbackQuery) -> None:
 
     text = (
         f'Подписка на {settings.default_plan_days} дней — {settings.default_plan_price_rub} ₽\n'
-        'Переведите оплату и нажмите кнопку ниже для подтверждения.'
-        f'\nID заказа: <code>{subscription.id}</code>'
+        'Выберите способ оплаты:\n'
+        f'ID заказа: <code>{subscription.id}</code>'
     )
-    await call.message.edit_text(text, reply_markup=buy_confirm_kb())
+    await call.message.edit_text(text, reply_markup=buy_methods_kb(subscription.id))
     await call.answer()
+
+
+@router.callback_query(F.data == 'trial')
+async def trial_info(call: CallbackQuery) -> None:
+    await call.answer('Пробный период подключается поддержкой. Напишите в чат поддержки.', show_alert=True)
+
+
+@router.callback_query(F.data.startswith('pay_crypto:'))
+async def create_crypto_payment(call: CallbackQuery) -> None:
+    subscription_id = int(call.data.split(':')[1])
+    async with SessionLocal() as session:
+        subscription = await get_subscription(session, subscription_id)
+        user = await get_or_create_user(
+            session=session,
+            telegram_id=call.from_user.id,
+            username=call.from_user.username,
+            full_name=call.from_user.full_name,
+        )
+        if not subscription or subscription.user_id != user.id:
+            await call.answer('Заказ не найден', show_alert=True)
+            return
+
+        payment = await create_payment(
+            session=session,
+            user_id=user.id,
+            amount_rub=subscription.price_rub,
+            subscription_id=subscription.id,
+            provider='cryptobot',
+        )
+
+    if not settings.cryptobot_token:
+        await call.answer('CRYPTOBOT_TOKEN не настроен', show_alert=True)
+        return
+
+    provider = CryptoBotProvider(settings.cryptobot_token)
+    invoice = await provider.create_invoice(
+        user_id=call.from_user.id,
+        amount_rub=subscription.price_rub,
+        payload=f'subscription:{subscription.id}:payment:{payment.id}',
+    )
+
+    async with SessionLocal() as session:
+        db_payment = await get_payment(session, payment.id)
+        if db_payment:
+            db_payment.provider_payment_id = invoice.invoice_id
+            await session.commit()
+
+    await call.message.edit_text(
+        f'Счёт создан ✅\nОплатите по ссылке: {invoice.pay_url}',
+        reply_markup=check_payment_kb(payment.id),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith('pay_donation:'))
+async def create_donation_payment(call: CallbackQuery) -> None:
+    subscription_id = int(call.data.split(':')[1])
+    if not settings.donation_base_url:
+        await call.answer('DONATION_BASE_URL не настроен', show_alert=True)
+        return
+
+    async with SessionLocal() as session:
+        subscription = await get_subscription(session, subscription_id)
+        user = await get_or_create_user(
+            session=session,
+            telegram_id=call.from_user.id,
+            username=call.from_user.username,
+            full_name=call.from_user.full_name,
+        )
+        if not subscription or subscription.user_id != user.id:
+            await call.answer('Заказ не найден', show_alert=True)
+            return
+
+        payment = await create_payment(
+            session=session,
+            user_id=user.id,
+            amount_rub=subscription.price_rub,
+            subscription_id=subscription.id,
+            provider='donation',
+        )
+
+    provider = DonationAlertsProvider(settings.donation_base_url)
+    invoice = await provider.create_invoice(
+        user_id=call.from_user.id,
+        amount_rub=subscription.price_rub,
+        payload=f'subscription:{subscription.id}:payment:{payment.id}',
+    )
+
+    async with SessionLocal() as session:
+        db_payment = await get_payment(session, payment.id)
+        if db_payment:
+            db_payment.provider_payment_id = invoice.invoice_id
+            await session.commit()
+
+    await call.message.edit_text(
+        f'Ссылка на рублёвую оплату:\n{invoice.pay_url}\n\nПосле оплаты нажмите «Проверить оплату».',
+        reply_markup=check_payment_kb(payment.id),
+    )
+    await call.answer()
+
+
+@router.callback_query(F.data.startswith('check_payment:'))
+async def check_payment(call: CallbackQuery) -> None:
+    payment_id = int(call.data.split(':')[1])
+
+    async with SessionLocal() as session:
+        payment = await get_payment(session, payment_id)
+        if not payment:
+            await call.answer('Платёж не найден', show_alert=True)
+            return
+
+        subscription = await get_subscription(session, payment.subscription_id)
+        user = await get_or_create_user(
+            session=session,
+            telegram_id=call.from_user.id,
+            username=call.from_user.username,
+            full_name=call.from_user.full_name,
+        )
+
+        if payment.user_id != user.id or not subscription:
+            await call.answer('Нет доступа к этому платежу', show_alert=True)
+            return
+
+        if payment.status == 'paid':
+            await call.answer('Платёж уже подтверждён')
+            return
+
+        if payment.provider == 'cryptobot':
+            if not settings.cryptobot_token:
+                await call.answer('CRYPTOBOT_TOKEN не настроен', show_alert=True)
+                return
+            provider = CryptoBotProvider(settings.cryptobot_token)
+            status = await provider.get_status(payment.provider_payment_id or '')
+            is_paid = status.state == 'paid'
+        else:
+            # Для донат-сервисов ждём webhook-подтверждение.
+            is_paid = False
+
+        if not is_paid:
+            await call.answer('Оплата пока не найдена. Попробуйте позже.', show_alert=True)
+            return
+
+        await mark_payment_paid(session, payment.id, payment.provider_payment_id)
+
+    await activate_and_deliver_subscription(call.bot, call.from_user.id, subscription)
+    await call.answer('Оплата подтверждена!')
 
 
 @router.callback_query(F.data == 'my_sub')
@@ -92,39 +270,5 @@ async def my_subscription(call: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == 'paid')
-async def paid_handler(call: CallbackQuery) -> None:
-    # Для MVP считаем платеж подтвержденным вручную.
-    client_name = f'user-{call.from_user.id}'
-    client = await wg_manager.create_client(client_name)
-    conf = build_client_config(
-        client,
-        server_public_key=settings.wireguard_server_public_key,
-        endpoint=settings.wireguard_server_endpoint,
-    )
-    file_path = save_config(f'storage/configs/{client_name}.conf', conf)
-
-    async with SessionLocal() as session:
-        user = await get_or_create_user(
-            session=session,
-            telegram_id=call.from_user.id,
-            username=call.from_user.username,
-            full_name=call.from_user.full_name,
-        )
-        subscription = await create_subscription(
-            session=session,
-            user_id=user.id,
-            plan_days=settings.default_plan_days,
-            price_rub=settings.default_plan_price_rub,
-        )
-        from database.crud import activate_subscription
-        await activate_subscription(
-            session=session,
-            subscription=subscription,
-            wg_client_id=client.id,
-            wg_client_name=client.name,
-            config_path=file_path,
-        )
-
-    await call.message.answer_document(FSInputFile(file_path), caption='Оплата подтверждена. Ваш WireGuard конфиг:')
-    await call.message.answer('Подписка активирована ✅', reply_markup=main_menu_kb())
-    await call.answer()
+async def paid_handler_deprecated(call: CallbackQuery) -> None:
+    await call.answer('Используйте новый способ оплаты через кнопки.', show_alert=True)
