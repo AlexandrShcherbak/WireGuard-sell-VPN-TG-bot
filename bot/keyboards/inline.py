@@ -31,7 +31,6 @@ def check_payment_kb(payment_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text='🔄 Проверить оплату', callback_data=f'check_payment:{payment_id}')],
-            [InlineKeyboardButton(text='💳 Другой способ оплаты', callback_data='back_to_subscription')],
             [InlineKeyboardButton(text='⬅️ В меню', callback_data='menu')],
         ]
     )
