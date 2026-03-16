@@ -1,10 +1,12 @@
 import logging
 
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from bot.keyboards.inline import buy_methods_kb, check_payment_kb, main_menu_kb
 from bot.services.subscription_delivery import activate_and_deliver_subscription
+from bot.states import SupportState
 from bot.utils.helpers import fmt_dt
 from config.config import settings
 from database.crud import (
@@ -68,12 +70,67 @@ async def open_menu(call: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == 'support')
-async def write_to_support(call: CallbackQuery) -> None:
+async def write_to_support(call: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(SupportState.waiting_for_message)
     await call.message.edit_text(
-        f'Написать в поддержку: {settings.support_contact}',
+        'Опишите проблему одним сообщением.\n\n'
+        'Мы отправим его администраторам, после чего с вами свяжутся.\n'
+        'Для отмены отправьте /cancel.',
         reply_markup=main_menu_kb(),
     )
     await call.answer()
+
+
+@router.message(SupportState.waiting_for_message, F.text == '/cancel')
+async def cancel_support_message(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer('Отправка сообщения в поддержку отменена.', reply_markup=main_menu_kb())
+
+
+@router.message(SupportState.waiting_for_message)
+async def send_support_message(message: Message, state: FSMContext) -> None:
+    text = (message.text or '').strip()
+    if not text:
+        await message.answer('Пожалуйста, отправьте текстовое сообщение или /cancel для отмены.')
+        return
+
+    admin_ids = settings.admin_ids
+    if not admin_ids:
+        await message.answer(
+            f'Поддержка временно недоступна. Напишите напрямую: {settings.support_contact}',
+            reply_markup=main_menu_kb(),
+        )
+        await state.clear()
+        return
+
+    username = f'@{message.from_user.username}' if message.from_user and message.from_user.username else 'без username'
+    full_name = message.from_user.full_name if message.from_user else 'unknown'
+    user_id = message.from_user.id if message.from_user else 0
+
+    payload = (
+        '🆘 <b>Новое обращение в поддержку</b>\n'
+        f'Пользователь: {full_name} ({username})\n'
+        f'ID: <code>{user_id}</code>\n\n'
+        f'<b>Сообщение:</b>\n{text}'
+    )
+
+    delivered = 0
+    for admin_id in admin_ids:
+        try:
+            await message.bot.send_message(admin_id, payload)
+            delivered += 1
+        except Exception:
+            logger.exception('Failed to forward support message to admin %s', admin_id)
+
+    await state.clear()
+
+    if delivered:
+        await message.answer('✅ Сообщение отправлено в поддержку. Ожидайте ответа.', reply_markup=main_menu_kb())
+    else:
+        await message.answer(
+            f'Не удалось отправить сообщение автоматически. Напишите напрямую: {settings.support_contact}',
+            reply_markup=main_menu_kb(),
+        )
 
 
 @router.callback_query(F.data == 'buy')
