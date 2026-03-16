@@ -131,6 +131,9 @@ async def trial_info(call: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith('pay_crypto:'))
 async def create_crypto_payment(call: CallbackQuery) -> None:
     subscription_id = int(call.data.split(':')[1])
+    if not settings.cryptobot_token:
+        await call.answer('CRYPTOBOT_TOKEN не настроен', show_alert=True)
+        return
     async with SessionLocal() as session:
         subscription = await get_subscription(session, subscription_id)
         user = await get_or_create_user(
@@ -150,10 +153,6 @@ async def create_crypto_payment(call: CallbackQuery) -> None:
             subscription_id=subscription.id,
             provider='cryptobot',
         )
-
-    if not settings.cryptobot_token:
-        await call.answer('CRYPTOBOT_TOKEN не настроен', show_alert=True)
-        return
 
     provider = CryptoBotProvider(settings.cryptobot_token)
     try:
@@ -263,7 +262,12 @@ async def check_payment(call: CallbackQuery) -> None:
                 await call.answer('CRYPTOBOT_TOKEN не настроен', show_alert=True)
                 return
             provider = CryptoBotProvider(settings.cryptobot_token)
-            status = await provider.get_status(payment.provider_payment_id or '')
+            try:
+                status = await provider.get_status(payment.provider_payment_id or '')
+            except Exception as exc:
+                logger.exception('Failed to check CryptoBot payment status')
+                await call.answer(f'Не удалось проверить платёж: {exc}', show_alert=True)
+                return
             is_paid = status.state == 'paid'
         else:
             # Для донат-сервисов подтверждение оплаты обычно приходит webhook'ом.
