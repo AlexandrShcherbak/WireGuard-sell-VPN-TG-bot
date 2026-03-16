@@ -4,6 +4,7 @@ from .provider import (
     Invoice,
     PaymentStatus,
     StubPaymentProvider,
+    get_payment_provider,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     'Invoice',
     'PaymentStatus',
     'StubPaymentProvider',
+    'get_payment_provider',
 ]

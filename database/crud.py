@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +49,7 @@ async def activate_subscription(
     wg_client_name: str,
     config_path: str,
 ) -> Subscription:
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     subscription.status = 'active'
     subscription.starts_at = now
     subscription.ends_at = now + timedelta(days=subscription.plan_days)
@@ -118,4 +118,3 @@ async def get_payment(session: AsyncSession, payment_id: int) -> Payment | None:
 
 async def get_subscription(session: AsyncSession, subscription_id: int) -> Subscription | None:
     return await session.get(Subscription, subscription_id)
-
